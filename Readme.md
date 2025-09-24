@@ -1,4 +1,4 @@
-# Dataset Distillation of 3D Point Clouds via Distribution Matching  
+# [NeurIPS2025] Dataset Distillation of 3D Point Clouds via Distribution Matching  
 
 [![arXiv](https://img.shields.io/badge/arXiv-2503.22154-b31b1b?style=flat-square)](https://arxiv.org/abs/2503.22154)  
 [![Conference](https://img.shields.io/badge/NeurIPS-2025-4b8bbe?style=flat-square)](https://neurips.cc)  
