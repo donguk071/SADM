@@ -1,8 +1,6 @@
 # [NeurIPS2025] Dataset Distillation of 3D Point Clouds via Distribution Matching  
 
-[![arXiv](https://img.shields.io/badge/arXiv-2503.22154-b31b1b?style=flat-square)](https://arxiv.org/abs/2503.22154)  
-[![Conference](https://img.shields.io/badge/NeurIPS-2025-4b8bbe?style=flat-square)](https://neurips.cc)  
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](./LICENSE)  
+[![arXiv](https://img.shields.io/badge/arXiv-2503.22154-b31b1b?style=flat-square)](https://arxiv.org/abs/2503.22154)  [![Conference](https://img.shields.io/badge/NeurIPS-2025-4b8bbe?style=flat-square)](https://neurips.cc)  [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](./LICENSE)  
 
 ![](./figures/overview.png)
 *Figure: Overall framework of the proposed dataset distillation method.*  
@@ -19,9 +17,6 @@ Large-scale 3D point cloud datasets are essential for training deep neural netwo
 - **Superior Generalization:** Achieves strong cross-architecture generalization across PointNet, PointNet++, DGCNN, and Point Transformer.  
 
 Our method consistently outperforms existing dataset distillation and coreset selection approaches on benchmarks such as ModelNet10, ModelNet40, ShapeNet, and ScanObjectNN.  
-
-
-## Qualitative Results
 
 We visualize the distilled synthetic datasets compared with baseline methods (DC, DM) on ModelNet40. Our method preserves the semantic structure of 3D objects (e.g., edges, corners, class-specific shapes), while existing methods tend to collapse to noisy or less informative patterns.
 
