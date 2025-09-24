@@ -18,6 +18,8 @@ Large-scale 3D point cloud datasets are essential for training deep neural netwo
 
 Our method consistently outperforms existing dataset distillation and coreset selection approaches on benchmarks such as ModelNet10, ModelNet40, ShapeNet, and ScanObjectNN.  
 
+---
+
 We visualize the distilled synthetic datasets compared with baseline methods (DC, DM) on ModelNet40. Our method preserves the semantic structure of 3D objects (e.g., edges, corners, class-specific shapes), while existing methods tend to collapse to noisy or less informative patterns.
 
 ![](./figures/results.png)  
