@@ -35,10 +35,9 @@ We visualize the distilled synthetic datasets compared with baseline methods (DC
 
 ## Quickstart  
 
-⚠️ The code will be released upon paper publication. Please stay tuned!  
-
 ```bash
 git clone https://github.com/donguk071/SADM.git
+CUDA_VISIBLE_DEVICES=0 python main.py --ppc 1  --dataset MODELNET40 
 ```
 
 

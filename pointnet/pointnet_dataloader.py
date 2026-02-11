@@ -12,14 +12,12 @@ import h5py
 
 warnings.filterwarnings('ignore')
 
-
 def pc_normalize(pc):
     centroid = np.mean(pc, axis=0)
     pc = pc - centroid
     m = np.max(np.sqrt(np.sum(pc**2, axis=1)))
     pc = pc / m
     return pc
-
 
 def farthest_point_sample(point, npoint):
     """
@@ -74,7 +72,7 @@ class ModelNetDataLoader(Dataset):
                          in range(len(shape_ids[split]))]
         print('The size of %s data is %d' % (split, len(self.datapath)))
 
-        self.save_path = os.path.join(root, 'modelnet%d_%s_%dpts_fps.dat' % (self.num_category, split, self.npoints))
+        self.save_path = os.path.join(root, 'modelnet%s_%s_%spts_fps.dat' % (str(self.num_category), str(split), str(self.npoints)))
             
         if self.process_data:
             if not os.path.exists(self.save_path):

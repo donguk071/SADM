@@ -4,49 +4,92 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
-
 from pointnet import pointnet_dataloader, pointnet_model
 from tqdm import tqdm
-
 import logging 
 import random
 
-# from loss.pointops.functions import pointops
-# from point_transformer import point_transformer
+class CustomSubsetDataset(torch.utils.data.Dataset):
+    def __init__(self, data, labels):
+        self.data = data
+        self.labels = labels
 
+    def __len__(self):
+        return len(self.data)
 
-random.seed(1999)
-np.random.seed(1999)
-torch.manual_seed(1999)
-torch.cuda.manual_seed(1999)
-torch.cuda.manual_seed_all(1999)
-
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
-
-
-def build_logger(work_dir, cfgname):
-    assert cfgname is not None
-    log_file = cfgname + '.log'
-    log_path = os.path.join(work_dir, log_file)
-
-    logger = logging.getLogger(cfgname)
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-
-    handler1 = logging.FileHandler(log_path)
-    handler1.setFormatter(formatter)
-    logger.addHandler(handler1)
-
-    handler2 = logging.StreamHandler()
-    handler2.setFormatter(formatter)
-    logger.addHandler(handler2)
-    logger.propagate = False
-
-    return logger
-
+    def __getitem__(self, idx):
+        return self.data[idx], self.labels[idx]
+    
 def get_dataset(args, dataset, npoints = 1024):
-    if dataset == 'MODELNET40': 
+    if dataset == 'CrossDataset': 
+        # define shared indices
+        MN40_index = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 18, 19, 20, 25, 30, 33]
+        SN_index = [0, 4, 5, 6, 8, 9, 10, 16, 18, 26, 20, 30, 31, 38, 47, 49]
+        num_classes = len(MN40_index)
+        coord_dim = 3
+
+        mn40_label_map = {old_idx: new_idx for new_idx, old_idx in enumerate(MN40_index)}
+        sn_label_map = {old_idx: new_idx for new_idx, old_idx in enumerate(SN_index)}
+
+        raw_mn40_train = pointnet_dataloader.ModelNetDataLoader(
+            root='/root/dataset/ModelNet40', split='train', npoints=npoints, num_category=40)
+        raw_mn40_test = pointnet_dataloader.ModelNetDataLoader(
+            root='/root/dataset/ModelNet40', split='test', npoints=npoints, num_category=40)
+        raw_sn_train = pointnet_dataloader.ShapeNetLoader(
+            "/root/dataset/ShapeNetv2/PointCloud", split='train')
+        raw_sn_test = pointnet_dataloader.ShapeNetLoader(
+            "/root/dataset/ShapeNetv2/PointCloud", split='test')
+
+
+        def filter_and_remap(original_dataset, index_list, label_map):
+            label_to_points = {lbl: [] for lbl in index_list}
+
+            for pts, lbl in original_dataset:
+                lbl = int(lbl)
+                if lbl in index_list:
+                    label_to_points[lbl].append(pts)
+
+            filtered_data = []
+            filtered_labels = []
+
+            for lbl in index_list:
+                for pts in label_to_points[lbl]:
+                    filtered_data.append(pts)
+                    filtered_labels.append(label_map[lbl])  
+
+            return filtered_data, filtered_labels
+
+
+        mn40_train_data, mn40_train_labels = filter_and_remap(raw_mn40_train, MN40_index, mn40_label_map)
+        mn40_test_data, mn40_test_labels = filter_and_remap(raw_mn40_test, MN40_index, mn40_label_map)
+        sn_train_data, sn_train_labels = filter_and_remap(raw_sn_train, SN_index, sn_label_map)
+        sn_test_data, sn_test_labels = filter_and_remap(raw_sn_test, SN_index, sn_label_map)
+
+        # pick train/test based on direction
+        if args.cross_dataset == "MN40_SN":
+            train_data, train_labels = mn40_train_data, mn40_train_labels
+            test_data, test_labels = sn_test_data, sn_test_labels
+        elif args.cross_dataset == "SN_MN40":
+            train_data, train_labels = sn_train_data, sn_train_labels
+            test_data, test_labels = mn40_test_data, mn40_test_labels
+        elif args.cross_dataset == "MN40_MN40":
+            train_data, train_labels = mn40_train_data, mn40_train_labels
+            test_data, test_labels = mn40_test_data, mn40_test_labels
+        elif args.cross_dataset == "SN_SN":
+            train_data, train_labels = sn_train_data, sn_train_labels
+            test_data, test_labels = sn_test_data, sn_test_labels
+
+        # wrap into Dataset & DataLoader
+        train_dataset = CustomSubsetDataset(train_data, train_labels)
+        test_dataset = CustomSubsetDataset(test_data, test_labels)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_real, shuffle=True)
+        bs = 16 if args.eval_mode == 'CrossArchi' else 128
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=bs, shuffle=False)
+
+        return npoints, coord_dim, num_classes, train_dataset, train_loader, test_loader
+  
+        
+    elif dataset == 'MODELNET40': 
         num_classes = 40
         coord_dim = 3
         npoints = npoints
@@ -63,10 +106,7 @@ def get_dataset(args, dataset, npoints = 1024):
            num_category=num_classes,
        )
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_real, shuffle=True)
-        if args.eval_mode == 'CrossArchi': 
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=16, shuffle=False)
-        else:
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)    
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)    
         return npoints,coord_dim, num_classes, train_dataset, train_loader, test_loader 
     
     elif dataset == 'MODELNET10':
@@ -86,10 +126,7 @@ def get_dataset(args, dataset, npoints = 1024):
            num_category=num_classes,
        )
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_real, shuffle=True)
-        if args.eval_mode == 'CrossArchi': 
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=16, shuffle=False)
-        else:
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)        
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)        
         return npoints,coord_dim, num_classes, train_dataset, train_loader, test_loader 
     
     elif dataset == 'scanobjectnn':
@@ -100,10 +137,7 @@ def get_dataset(args, dataset, npoints = 1024):
         test_dataset = pointnet_dataloader.ScanObjectNNLoader("/root/dataset/ScanObjectNN/main_split_nobg", split='test')
 
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_real, shuffle=True)
-        if args.eval_mode == 'CrossArchi': 
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=16, shuffle=False)
-        else:
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)
         return npoints, coord_dim, num_classes, train_dataset, train_loader, test_loader
     
     elif dataset == 'shapenet':
@@ -114,23 +148,44 @@ def get_dataset(args, dataset, npoints = 1024):
         test_dataset = pointnet_dataloader.ShapeNetLoader("/root/dataset/ShapeNetv2/PointCloud", split='test')
 
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_real, shuffle=True)
-        if args.eval_mode == 'CrossArchi': 
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=16, shuffle=False)
-        else:
-            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)
         return npoints, coord_dim, num_classes, train_dataset, train_loader, test_loader
     
     else:
         exit('unknown dataset: %s'%dataset)
 
+    print(dataset)
     testloader = torch.utils.data.DataLoader(dst_test, batch_size=128, shuffle=False, num_workers=0)
     return channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader
 
+class TensorDataset(Dataset):
+    def __init__(self, images, labels): # images: n x c x h x w tensor
+        self.images = images.detach().float()
+        self.labels = labels.detach()
+
+    def __getitem__(self, index):
+        return self.images[index], self.labels[index]
+
+    def __len__(self):
+        return self.images.shape[0]
+
 
 def get_network(model, channel, num_classes,feature_transform = False):
-
     if model == "PointNet": 
         net = pointnet_model.PointNetCls(k=num_classes, feature_transform=feature_transform)
+    
+    # elif model == "PointNetPlusPlus" :
+    #     net = pointnetpp_model.PointNet2Cls(num_classes)
+        
+    # elif model == "DGCNN" :
+    #     net = dgcnn.DGCNN(num_classes)
+   
+    # elif model == "PointConvDensityClsSsg":
+    #     net = pointconv.PointConvDensityClsSsg(num_classes)    
+
+    # elif model == "PointTransformerCls":
+    #     net = point_transformer.PointTransformerCls(num_classes)    
+
     else:
         net = None
         exit('unknown model: %s'%model)
@@ -147,8 +202,45 @@ def get_network(model, channel, num_classes,feature_transform = False):
 
     return net
 
+
+class RBF(nn.Module):
+
+    def __init__(self, n_kernels=5, mul_factor=2.0, bandwidth=None):
+        super().__init__()
+        self.bandwidth_multipliers = mul_factor ** (torch.arange(n_kernels) - n_kernels // 2)
+        self.bandwidth_multipliers = self.bandwidth_multipliers.cuda()
+        self.bandwidth = bandwidth
+
+    def get_bandwidth(self, L2_distances):
+        if self.bandwidth is None:
+            n_samples = L2_distances.shape[0]
+            return L2_distances.data.sum() / (n_samples ** 2 - n_samples)
+
+        return self.bandwidth
+
+    def forward(self, X):
+        L2_distances = torch.cdist(X, X) ** 2
+        return torch.exp(-L2_distances[None, ...] / (self.get_bandwidth(L2_distances) * self.bandwidth_multipliers)[:, None, None]).sum(dim=0)
+
+class M3DLoss(nn.Module):
+
+    def __init__(self, kernel_type):
+        super().__init__()
+        if kernel_type == 'gaussian':
+            self.kernel = RBF()
+
+    def forward(self, X, Y):
+        K = self.kernel(torch.vstack([X, Y]))
+        X_size = X.shape[0]
+        XX = K[:X_size, :X_size].mean()
+        XY = K[:X_size, X_size:].mean()
+        YY = K[X_size:, X_size:].mean()
+        return XX - 2 * XY + YY
+
+
 def get_time():
     return str(time.strftime("[%Y-%m-%d %H:%M:%S]", time.localtime()))
+
 
 def epoch(mode, dataloader, net, optimizer, criterion, args, aug, calc_classwise_acc = False):
     loss_avg, acc_avg, num_exp = 0, 0, 0
@@ -157,8 +249,8 @@ def epoch(mode, dataloader, net, optimizer, criterion, args, aug, calc_classwise
 
     if calc_classwise_acc:
         num_classes = args.num_classes
-        correct_per_class = [0] * num_classes  
-        total_per_class = [0] * num_classes    
+        correct_per_class = [0] * num_classes 
+        total_per_class = [0] * num_classes   
 
     predictions_per_sample = []
 
@@ -181,6 +273,7 @@ def epoch(mode, dataloader, net, optimizer, criterion, args, aug, calc_classwise
         acc_avg += acc
         num_exp += n_b
 
+        # Calculate class-wise accuracy
         if calc_classwise_acc:
             _, predicted = torch.max(output, 1)
             for label, prediction in zip(lab, predicted):
@@ -235,19 +328,6 @@ def seed_worker(_worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
-
-class TensorDataset(Dataset):
-    def __init__(self, images, labels): # images: n x c x h x w tensor
-        self.images = images.detach().float()
-        self.labels = labels.detach()
-
-    def __getitem__(self, index):
-        return self.images[index], self.labels[index]
-
-    def __len__(self):
-        return self.images.shape[0]
-
-
 def evaluate_synset(it_eval, net, images_train, labels_train, testloader, args):
     net = net.to(args.device)
     images_train = pc_normalize_batch(images_train).to(args.device)
@@ -273,22 +353,47 @@ def evaluate_synset(it_eval, net, images_train, labels_train, testloader, args):
             optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9, weight_decay=0.0005)
         
         if ep % 10 == 0 and ep > 499 :
+
             loss_test, acc_test, acc_test_per_class, predictions_per_sample = epoch('test', testloader, net, optimizer, criterion, args, aug=False, calc_classwise_acc=True)
 
             if acc_test > best_acc:
                 best_acc = acc_test
                 best_per_class = acc_test_per_class
                 best_prediction = predictions_per_sample
+                best_net = net
 
     time_train = time.time() - start
 
     print('%s Evaluate_%02d: epoch = %04d train time = %d s train loss = %.6f train acc = %.4f, test acc = %.4f' % (get_time(), it_eval, Epoch, int(time_train), loss_train, acc_train, best_acc))
 
+
     return net, acc_train, best_acc, best_per_class, best_prediction
 
-def get_eval_pool(eval_mode, model, model_eval):
-    if eval_mode == 'S': 
-        if 'BN' in model:
-            print('Attention: Here I will replace BN with IN in evaluation, as the synthetic set is too small to measure BN hyper-parameters.')
-        model_eval_pool = [model[:model.index('BN')]] if 'BN' in model else [model]
+
+def get_eval_pool(eval_mode, model):
+    if eval_mode == 'S':  # itself
+        model_eval_pool = [model]
+    elif eval_mode == 'SSS': 
+        model_eval_pool = [model , 'PointNetPlusPlus'] #ext
     return model_eval_pool
+
+
+def build_logger(work_dir, cfgname):
+    assert cfgname is not None
+    log_file = cfgname + '.log'
+    log_path = os.path.join(work_dir, log_file)
+
+    logger = logging.getLogger(cfgname)
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+    handler1 = logging.FileHandler(log_path)
+    handler1.setFormatter(formatter)
+    logger.addHandler(handler1)
+
+    handler2 = logging.StreamHandler()
+    handler2.setFormatter(formatter)
+    logger.addHandler(handler2)
+    logger.propagate = False
+
+    return logger
